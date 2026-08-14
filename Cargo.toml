@@ -1,0 +1,32 @@
+[package]
+name = "LauncherMC"
+version = "0.1.0"
+edition = "2021"
+default-run = "LauncherMC"
+
+[dependencies]
+eframe = "0.32"
+reqwest = {
+    version = "0.12",
+    default-features = false,
+    features = ["blocking", "rustls-tls", "json"]
+}
+serde = {
+    version = "1",
+    features = ["derive"]
+}
+serde_json = "1"
+zip = "0.6"
+
+[[bin]]
+name = "LauncherMC"
+path = "src/main.rs"
+
+[[bin]]
+name = "LauncherMCupdater"
+path = "src/bin/updater.rs"
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

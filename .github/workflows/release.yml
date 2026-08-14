@@ -1,0 +1,88 @@
+name: Release build (multi-OS)
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Build release binaries
+        run: |
+          cargo build --release --bins
+
+      - name: Locate built binaries
+        id: find
+        run: |
+          echo "workspace=$(pwd)" >> $GITHUB_OUTPUT
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            echo "launcher=target/release/LauncherMC.exe" >> $GITHUB_OUTPUT
+            echo "updater=target/release/LauncherMCupdater.exe" >> $GITHUB_OUTPUT
+          else
+            echo "launcher=target/release/LauncherMC" >> $GITHUB_OUTPUT
+            echo "updater=target/release/LauncherMCupdater" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Package minecraft assets (if present)
+        id: pkg_minecraft
+        run: |
+          out="minecraft-artifacts-${{ matrix.os }}.zip"
+          files=()
+          if [ -f minecraft/minecraft.jar ]; then
+            files+=(minecraft/minecraft.jar)
+          fi
+          if [ -d minecraft/local-libs ]; then
+            files+=(minecraft/local-libs)
+          fi
+          if [ ${#files[@]} -gt 0 ]; then
+            zip -r "$out" "${files[@]}"
+            echo "pkg=$out" >> $GITHUB_OUTPUT
+          else
+            echo "pkg=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ steps.find.outputs.launcher }}
+          asset_name: LauncherMC-${{ matrix.os }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload updater to GitHub Release
+        uses: softprops/action-upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ steps.find.outputs.updater }}
+          asset_name: LauncherMCupdater-${{ matrix.os }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload minecraft artifacts (if packaged)
+        if: steps.pkg_minecraft.outputs.pkg != ''
+        uses: softprops/action-upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ steps.pkg_minecraft.outputs.pkg }}
+          asset_name: minecraft-assets-${{ matrix.os }}.zip
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
