@@ -889,14 +889,7 @@ impl Launcher {
             .ok_or_else(|| "No assets in release".to_string())?;
 
             
-        // Определяем платформу
-            let platform = if cfg!(target_os = "windows") {
-                "windows"
-            } else if cfg!(target_os = "linux") {
-                "linux"
-            } else {
-                "macos"
-            };
+        
         for asset in assets {
             let name = asset
                 .get("name")
