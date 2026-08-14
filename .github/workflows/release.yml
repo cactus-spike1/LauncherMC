@@ -29,6 +29,7 @@ jobs:
         id: create_release
         uses: actions/create-release@v1
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.event.inputs.tag }}
           release_name: ${{ github.event.inputs.tag }}
           body: "Automated build from workflow_dispatch"
@@ -83,8 +84,7 @@ jobs:
           asset_path: ${{ steps.find.outputs.launcher }}
           asset_name: LauncherMC-${{ matrix.os }}
           asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload updater to GitHub Release
         uses: actions/upload-release-asset@v1
@@ -93,8 +93,7 @@ jobs:
           asset_path: ${{ steps.find.outputs.updater }}
           asset_name: LauncherMCupdater-${{ matrix.os }}
           asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload minecraft artifacts (if packaged)
         if: steps.pkg_minecraft.outputs.pkg != ''
@@ -104,5 +103,4 @@ jobs:
           asset_path: ${{ steps.pkg_minecraft.outputs.pkg }}
           asset_name: minecraft-assets-${{ matrix.os }}.zip
           asset_content_type: application/zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
