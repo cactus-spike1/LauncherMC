@@ -9,8 +9,8 @@ use std::{
 };
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const GITHUB_OWNER: &str = "YOUR_GITHUB_USERNAME";
-const GITHUB_REPO: &str = "YOUR_REPOSITORY";
+const GITHUB_OWNER: &str = "cactus-spike1";
+const GITHUB_REPO: &str = "LauncherMC";
 const DEPENDENCIES: &[&str] = &[
     // LWJGL
     "org.lwjgl:lwjgl:3.2.2",
