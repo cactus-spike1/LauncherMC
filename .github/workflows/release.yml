@@ -57,10 +57,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        - os: ubuntu-latest
-          os_name: linux
-        - os: windows-latest
-          os_name: windows
+        include:
+          - os: ubuntu-latest
+            os_name: linux
+            launcher_bin: target/release/LauncherMC
+            updater_bin: target/release/LauncherMCupdater
+
+          - os: windows-latest
+            os_name: windows
+            launcher_bin: target/release/LauncherMC.exe
+            updater_bin: target/release/LauncherMCupdater.exe
 
     steps:
       - name: Checkout
@@ -72,25 +78,15 @@ jobs:
       - name: Build release binaries
         run: cargo build --release --bins
 
-      - name: Locate built binaries
-        id: find
-        run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            echo "launcher=target/release/LauncherMC.exe" >> $GITHUB_OUTPUT
-            echo "updater=target/release/LauncherMCupdater.exe" >> $GITHUB_OUTPUT
-          else
-            echo "launcher=target/release/LauncherMC" >> $GITHUB_OUTPUT
-            echo "updater=target/release/LauncherMCupdater" >> $GITHUB_OUTPUT
-          fi
-
       - name: Install zip (Windows)
         if: matrix.os == 'windows-latest'
         run: choco install zip
 
       - name: Package minecraft assets (if present)
         id: pkg_minecraft
+        shell: bash
         run: |
-          out="minecraft-assets-${{ matrix.os }}.zip"
+          out="minecraft-assets-${{ matrix.os_name }}.zip"
           files=()
 
           [ -f minecraft/minecraft.jar ] && files+=(minecraft/minecraft.jar)
@@ -107,17 +103,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp target/release/LauncherMC LauncherMC-${{ matrix.os_name }}
+          cp "${{ matrix.launcher_bin }}" "LauncherMC-${{ matrix.os_name }}"
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-          LauncherMC-${{ matrix.os_name }} \
-          --clobber \
-          --repo "${{ github.repository }}"
+            "LauncherMC-${{ matrix.os_name }}" \
+            --clobber \
+            --repo "${{ github.repository }}"
 
       - name: Upload updater
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp "${{ steps.find.outputs.updater }}" "LauncherMCupdater-${{ matrix.os_name }}"
+          cp "${{ matrix.updater_bin }}" "LauncherMCupdater-${{ matrix.os_name }}"
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
             "LauncherMCupdater-${{ matrix.os_name }}" \
             --clobber \
@@ -125,20 +121,20 @@ jobs:
 
       - name: Upload minecraft.jar (if present)
         if: hashFiles('minecraft/minecraft.jar') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
             "minecraft/minecraft.jar" \
             --name "minecraft.jar" \
             --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload local-libs.zip (if present)
         if: hashFiles('minecraft/local-libs.zip') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
             "minecraft/local-libs.zip" \
             --name "local-libs.zip" \
             --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
