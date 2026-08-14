@@ -60,7 +60,7 @@ jobs:
           fi
 
           if [ -d mc/local-libs ]; then
-            cp mc/local-libs.zip out/local-libs.zip
+            cp mc/local-libs.zip out/local-libs.zip 
           fi
 
       - name: Create release if needed
@@ -80,5 +80,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          ls
           TAG="${{ github.event.inputs.tag }}"
           gh release upload "$TAG" out/* --clobber --repo "${{ github.repository }}"
