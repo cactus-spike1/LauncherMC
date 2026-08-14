@@ -28,8 +28,9 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.create_release == 'true'
         id: create_release
         uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.event.inputs.tag }}
           release_name: ${{ github.event.inputs.tag }}
           body: "Automated build from workflow_dispatch"
