@@ -101,22 +101,22 @@ jobs:
           fi
 
       - name: Upload launcher
-        run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.find.outputs.launcher }}" \
-            --name "LauncherMC-${{ matrix.os }}" \
-            --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
+            "${{ steps.find.outputs.launcher }}=LauncherMC-${{ matrix.os }}" \
+            --clobber \
+            --repo "${{ github.repository }}"
 
       - name: Upload updater
-        run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.find.outputs.updater }}" \
-            --name "LauncherMCupdater-${{ matrix.os }}" \
-            --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
+            "${{ steps.find.outputs.updater }}=LauncherMCupdater-${{ matrix.os }}" \
+            --clobber \
+            --repo "${{ github.repository }}"
 
       - name: Upload minecraft.jar (if present)
         if: hashFiles('minecraft/minecraft.jar') != ''
@@ -140,10 +140,10 @@ jobs:
 
       - name: Upload minecraft assets (if packaged)
         if: steps.pkg_minecraft.outputs.pkg != ''
-        run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.pkg_minecraft.outputs.pkg }}" \
-            --name "minecraft-assets-${{ matrix.os }}.zip" \
-            --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
+            "${{ steps.pkg_minecraft.outputs.pkg }}=minecraft-assets-${{ matrix.os }}.zip" \
+            --clobber \
+            --repo "${{ github.repository }}"
