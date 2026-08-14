@@ -42,12 +42,16 @@ jobs:
 
       # Create release only for workflow_dispatch
       - name: Create release (manual run)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' && matrix.os == 'ubuntu-latest'
         run: |
-          gh release create "${{ github.event.inputs.tag }}" \
-            --title "${{ github.event.inputs.tag }}" \
-            --notes "Automated build from workflow_dispatch" \
-            --repo "${{ github.repository }}"
+          if gh release view "${{ github.event.inputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release already exists, skipping."
+          else
+            gh release create "${{ github.event.inputs.tag }}" \
+              --title "${{ github.event.inputs.tag }}" \
+              --notes "Automated build from workflow_dispatch" \
+              --repo "${{ github.repository }}"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
