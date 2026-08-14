@@ -24,6 +24,19 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
+      - name: Install GitHub CLI (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Install GitHub CLI (macOS)
+        if: runner.os == 'macOS'
+        run: brew install gh
+
+      - name: Install GitHub CLI (Windows)
+        if: runner.os == 'Windows'
+        run: choco install gh
       - name: Checkout
         uses: actions/checkout@v4
 
