@@ -1,125 +1,84 @@
-name: Release build (multi-OS)
+name: Release build (ArchLinux-only)
 
 permissions:
   contents: write
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to create/use (e.g. v0.1.0)"
+        description: "Release tag (e.g. v0.1.0)"
         required: true
       create_release:
-        description: "Create release if not exists (true/false)"
-        required: false
+        description: "Create release if not exists"
         default: "true"
 
 jobs:
-  prepare_release:
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.set_tag.outputs.tag }}
-
-    steps:
-      - name: Set tag
-        id: set_tag
-        run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Install GitHub CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
-
-      - name: Create release if needed
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
-        run: |
-          TAG="${{ steps.set_tag.outputs.tag }}"
-          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release already exists."
-          else
-            gh release create "$TAG" --title "$TAG" --notes "Automated build" --repo "${{ github.repository }}"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build:
-    needs: prepare_release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            os_name: linux
-            launcher_bin: target/release/LauncherMC
-            updater_bin: target/release/LauncherMCupdater
-
-          - os: windows-latest
-            os_name: windows
-            launcher_bin: target/release/LauncherMC.exe
-            updater_bin: target/release/LauncherMCupdater.exe
+    runs-on: ubuntu-latest
+    container: archlinux:latest
 
     steps:
+      - name: Install dependencies
+        run: |
+          pacman -Sy --noconfirm \
+            base-devel \
+            git \
+            rustup \
+            mingw-w64-gcc \
+            zip \
+            gh
+
+          rustup default stable
+          rustup target add x86_64-pc-windows-gnu
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build release binaries
+      - name: Build Linux binaries
         run: cargo build --release --bins
 
-      - name: Install zip (Windows)
-        if: matrix.os == 'windows-latest'
-        run: choco install zip
+      - name: Build Windows binaries (cross-compile)
+        run: cargo build --release --bins --target x86_64-pc-windows-gnu
 
-      - name: Package minecraft assets (if present)
-        id: pkg_minecraft
-        shell: bash
+      - name: Prepare output files
         run: |
-          out="minecraft-assets-${{ matrix.os_name }}.zip"
-          files=()
+          mkdir out
 
-          [ -f minecraft/minecraft.jar ] && files+=(minecraft/minecraft.jar)
-          [ -d minecraft/local-libs ] && files+=(minecraft/local-libs)
+          # Linux
+          cp target/release/LauncherMC out/LauncherMC-linux
+          cp target/release/LauncherMCupdater out/LauncherMCupdater-linux
 
-          if [ ${#files[@]} -gt 0 ]; then
-            zip -r "$out" "${files[@]}"
-            echo "pkg=$out" >> $GITHUB_OUTPUT
-          else
-            echo "pkg=" >> $GITHUB_OUTPUT
+          # Windows
+          cp target/x86_64-pc-windows-gnu/release/LauncherMC.exe out/LauncherMC-windows.exe
+          cp target/x86_64-pc-windows-gnu/release/LauncherMCupdater.exe out/LauncherMCupdater-windows.exe
+
+      - name: Package minecraft assets
+        run: |
+          if [ -f minecraft/minecraft.jar ]; then
+            cp minecraft/minecraft.jar out/minecraft.jar
           fi
 
-      - name: Upload launcher
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cp "${{ matrix.launcher_bin }}" "LauncherMC-${{ matrix.os_name }}"
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" "LauncherMC-${{ matrix.os_name }}" --clobber --repo "${{ github.repository }}"
+          if [ -d minecraft/local-libs ]; then
+            zip -r out/local-libs.zip minecraft/local-libs
+          fi
 
-      - name: Upload updater
+      - name: Create release if needed
+        if: github.event.inputs.create_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp "${{ matrix.updater_bin }}" "LauncherMCupdater-${{ matrix.os_name }}"
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" "LauncherMCupdater-${{ matrix.os_name }}" --clobber --repo "${{ github.repository }}"
+          TAG="${{ github.event.inputs.tag }}"
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "ArchLinux cross-platform build" \
+              --repo "${{ github.repository }}"
+          fi
 
-      - name: Upload minecraft.jar (if present)
-        if: hashFiles('minecraft/minecraft.jar') != ''
+      - name: Upload artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" "minecraft/minecraft.jar" --name "minecraft.jar" --repo "${{ github.repository }}"
-
-      - name: Upload local-libs.zip (if present)
-        if: hashFiles('minecraft/local-libs.zip') != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" "minecraft/local-libs.zip" --name "local-libs.zip" --repo "${{ github.repository }}"
+          TAG="${{ github.event.inputs.tag }}"
+          gh release upload "$TAG" out/* --clobber --repo "${{ github.repository }}"
