@@ -44,10 +44,7 @@ jobs:
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             echo "Release already exists."
           else
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --notes "Automated build" \
-              --repo "${{ github.repository }}"
+            gh release create "$TAG" --title "$TAG" --notes "Automated build" --repo "${{ github.repository }}"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -104,37 +101,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp "${{ matrix.launcher_bin }}" "LauncherMC-${{ matrix.os_name }}"
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "LauncherMC-${{ matrix.os_name }}" \
-            --clobber \
-            --repo "${{ github.repository }}"
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" "LauncherMC-${{ matrix.os_name }}" --clobber --repo "${{ github.repository }}"
 
       - name: Upload updater
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp "${{ matrix.updater_bin }}" "LauncherMCupdater-${{ matrix.os_name }}"
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "LauncherMCupdater-${{ matrix.os_name }}" \
-            --clobber \
-            --repo "${{ github.repository }}"
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" "LauncherMCupdater-${{ matrix.os_name }}" --clobber --repo "${{ github.repository }}"
 
       - name: Upload minecraft.jar (if present)
         if: hashFiles('minecraft/minecraft.jar') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "minecraft/minecraft.jar" \
-            --name "minecraft.jar" \
-            --repo "${{ github.repository }}"
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" "minecraft/minecraft.jar" --name "minecraft.jar" --repo "${{ github.repository }}"
 
       - name: Upload local-libs.zip (if present)
         if: hashFiles('minecraft/local-libs.zip') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "minecraft/local-libs.zip" \
-            --name "local-libs.zip" \
-            --repo "${{ github.repository }}"
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" "minecraft/local-libs.zip" --name "local-libs.zip" --repo "${{ github.repository }}"
