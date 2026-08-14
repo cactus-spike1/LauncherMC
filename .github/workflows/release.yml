@@ -104,10 +104,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.find.outputs.launcher }}=LauncherMC-${{ matrix.os }}" \
+          gh release upload '${{ needs.prepare_release.outputs.tag }}' \
+            'target/release/LauncherMC=LauncherMC-${{ matrix.os }}' \
             --clobber \
-            --repo "${{ github.repository }}"
+            --repo '${{ github.repository }}'
 
       - name: Upload updater
         env:
