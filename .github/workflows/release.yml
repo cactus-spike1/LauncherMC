@@ -35,11 +35,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Linux binaries
-        run: cargo build --release --bins
-
-      - name: Build Windows binaries (cross-compile)
-        run: cargo build --release --bins --target x86_64-pc-windows-gnu
+      - name: Build Linux and Windows binaries
+        run: |
+          cargo build --release --bins &
+          cargo build --release --bins --target x86_64-pc-windows-gnu &
+          wait
 
       - name: Prepare output files
         run: |
@@ -59,7 +59,7 @@ jobs:
             cp mc/minecraft.jar out/minecraft.jar
           fi
 
-          if [ -d mc/local-libs ]; then
+          if [ -f mc/local-libs.zip ]; then
             cp mc/local-libs.zip out/local-libs.zip 
           fi
 
