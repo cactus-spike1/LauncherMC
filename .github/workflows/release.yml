@@ -40,6 +40,39 @@ jobs:
           draft: false
           prerelease: false
 
+      - name: Resolve release upload URL
+        id: get_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # If triggered by a real release event, use that upload_url
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "upload_url=${{ github.event.release.upload_url }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # If create_release produced an upload_url, use it
+          if [ -n "${{ steps.create_release.outputs.upload_url }}" ]; then
+            echo "upload_url=${{ steps.create_release.outputs.upload_url }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Otherwise, query GitHub for release by tag
+          TAG="${{ github.event.inputs.tag }}"
+          API="https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG"
+          resp=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "$API")
+          upload_url=$(python - <<'PY'
+import sys, json
+try:
+    obj = json.load(sys.stdin)
+    print(obj.get('upload_url',''))
+except Exception:
+    print('')
+PY
+          <<< "$resp")
+          upload_url=${upload_url%%\{*}
+          echo "upload_url=$upload_url" >> $GITHUB_OUTPUT
+
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -84,7 +117,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ github.event_name == 'release' && github.event.release.upload_url || steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
           asset_path: ${{ steps.find.outputs.launcher }}
           asset_name: LauncherMC-${{ matrix.os }}
           asset_content_type: application/octet-stream
@@ -93,7 +126,7 @@ jobs:
       - name: Upload updater to GitHub Release
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ github.event_name == 'release' && github.event.release.upload_url || steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
           asset_path: ${{ steps.find.outputs.updater }}
           asset_name: LauncherMCupdater-${{ matrix.os }}
           asset_content_type: application/octet-stream
@@ -103,7 +136,7 @@ jobs:
         if: steps.pkg_minecraft.outputs.pkg != ''
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ github.event_name == 'release' && github.event.release.upload_url || steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
           asset_path: ${{ steps.pkg_minecraft.outputs.pkg }}
           asset_name: minecraft-assets-${{ matrix.os }}.zip
           asset_content_type: application/zip
