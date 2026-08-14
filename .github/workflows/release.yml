@@ -27,67 +27,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create release (on manual run)
-        if: github.event_name == 'workflow_dispatch' && inputs.create_release == 'true'
-        id: create_release
-        uses: actions/create-release@v1
+      # Create release only for workflow_dispatch
+      - name: Create release (manual run)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+        run: |
+          gh release create "${{ github.event.inputs.tag }}" \
+            --title "${{ github.event.inputs.tag }}" \
+            --notes "Automated build from workflow_dispatch" \
+            --repo "${{ github.repository }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.event.inputs.tag }}
-          release_name: ${{ github.event.inputs.tag }}
-          body: "Automated build from workflow_dispatch"
-          draft: false
-          prerelease: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Resolve upload_url
       - name: Resolve release upload URL
         id: get_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # If triggered by a real release event, use that upload_url
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "upload_url=${{ github.event.release.upload_url }}" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # If create_release produced an upload_url, use it
-          if [ -n "${{ steps.create_release.outputs.upload_url }}" ]; then
-            echo "upload_url=${{ steps.create_release.outputs.upload_url }}" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Otherwise, query GitHub for release by tag
           TAG="${{ github.event.inputs.tag }}"
           API="https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG"
-          resp=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "$API")
-          upload_url=$(python - <<'PY'
-import sys, json
-try:
-    obj = json.load(sys.stdin)
-    print(obj.get('upload_url',''))
-except Exception:
-    print('')
-PY
-          <<< "$resp")
-          upload_url=${upload_url%%\{*}
+
+          resp=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$API")
+          upload_url=$(echo "$resp" | python3 -c "import sys, json; print(json.load(sys.stdin).get('upload_url',''))")
+          upload_url="${upload_url%\{*}"
+
           echo "upload_url=$upload_url" >> $GITHUB_OUTPUT
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build release binaries
-        run: |
-          cargo build --release --bins
+        run: cargo build --release --bins
 
       - name: Locate built binaries
         id: find
         run: |
-          echo "workspace=$(pwd)" >> $GITHUB_OUTPUT
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
             echo "launcher=target/release/LauncherMC.exe" >> $GITHUB_OUTPUT
             echo "updater=target/release/LauncherMCupdater.exe" >> $GITHUB_OUTPUT
@@ -96,17 +73,19 @@ PY
             echo "updater=target/release/LauncherMCupdater" >> $GITHUB_OUTPUT
           fi
 
+      - name: Install zip (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install zip
+
       - name: Package minecraft assets (if present)
         id: pkg_minecraft
         run: |
-          out="minecraft-artifacts-${{ matrix.os }}.zip"
+          out="minecraft-assets-${{ matrix.os }}.zip"
           files=()
-          if [ -f minecraft/minecraft.jar ]; then
-            files+=(minecraft/minecraft.jar)
-          fi
-          if [ -d minecraft/local-libs ]; then
-            files+=(minecraft/local-libs)
-          fi
+
+          [ -f minecraft/minecraft.jar ] && files+=(minecraft/minecraft.jar)
+          [ -d minecraft/local-libs ] && files+=(minecraft/local-libs)
+
           if [ ${#files[@]} -gt 0 ]; then
             zip -r "$out" "${files[@]}"
             echo "pkg=$out" >> $GITHUB_OUTPUT
@@ -114,65 +93,30 @@ PY
             echo "pkg=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check minecraft files
-        id: check_minecraft
+      - name: Upload launcher
         run: |
-          if [ -f minecraft/minecraft.jar ]; then
-            echo "has_jar=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_jar=false" >> $GITHUB_OUTPUT
-          fi
+          gh release upload "${{ github.event.inputs.tag || github.event.release.tag_name }}" \
+            "${{ steps.find.outputs.launcher }}" \
+            --name "LauncherMC-${{ matrix.os }}" \
+            --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          if [ -f minecraft/local-libs.zip ]; then
-            echo "has_local_zip=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_local_zip=false" >> $GITHUB_OUTPUT
-          fi
+      - name: Upload updater
+        run: |
+          gh release upload "${{ github.event.inputs.tag || github.event.release.tag_name }}" \
+            "${{ steps.find.outputs.updater }}" \
+            --name "LauncherMCupdater-${{ matrix.os }}" \
+            --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload minecraft.jar (if present)
-        if: steps.check_minecraft.outputs.has_jar == 'true'
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: minecraft/minecraft.jar
-          asset_name: minecraft.jar
-          asset_content_type: application/java-archive
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload local-libs.zip (if present)
-        if: steps.check_minecraft.outputs.has_local_zip == 'true'
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: minecraft/local-libs.zip
-          asset_name: local-libs.zip
-          asset_content_type: application/zip
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload to GitHub Release
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ${{ steps.find.outputs.launcher }}
-          asset_name: LauncherMC-${{ matrix.os }}
-          asset_content_type: application/octet-stream
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload updater to GitHub Release
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ${{ steps.find.outputs.updater }}
-          asset_name: LauncherMCupdater-${{ matrix.os }}
-          asset_content_type: application/octet-stream
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload minecraft artifacts (if packaged)
+      - name: Upload minecraft assets (if packaged)
         if: steps.pkg_minecraft.outputs.pkg != ''
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ${{ steps.pkg_minecraft.outputs.pkg }}
-          asset_name: minecraft-assets-${{ matrix.os }}.zip
-          asset_content_type: application/zip
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.inputs.tag || github.event.release.tag_name }}" \
+            "${{ steps.pkg_minecraft.outputs.pkg }}" \
+            --name "minecraft-assets-${{ matrix.os }}.zip" \
+            --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

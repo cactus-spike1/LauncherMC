@@ -587,6 +587,15 @@ impl Launcher {
         fs::create_dir_all(Self::natives_dir())
             .map_err(|e| e.to_string())?;
 
+        let client = Client::builder()
+            .user_agent("SimpleMinecraftLauncher/1.0")
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        // Попробовать авто-загрузить minecraft.jar и local-libs из релиза на GitHub
+        // делаем это до проверки наличия JAR, чтобы скачать его при отсутствии
+        Self::ensure_minecraft_artifacts(&client).ok();
+
         if !Self::minecraft_jar().exists() {
             return Err(format!(
                 "Не найден:\n{}",
@@ -595,16 +604,6 @@ impl Launcher {
         }
 
         Self::check_java()?;
-
-        let client = Client::builder()
-            .user_agent(
-                "SimpleMinecraftLauncher/1.0"
-            )
-            .build()
-            .map_err(|e| e.to_string())?;
-
-        // Попробовать авто-загрузить minecraft.jar и local-libs из релиза на GitHub
-        Self::ensure_minecraft_artifacts(&client).ok();
 
         // Обычные зависимости
         self.download_dependencies(&client)?;
@@ -747,39 +746,24 @@ impl Launcher {
         }
     }
     fn check_update_on_start(&mut self) {
-    self.status =
-        "Проверка обновлений...".to_string();
+        self.status = "Проверка обновлений...".to_string();
 
-    match check_for_update() {
-        Ok(Some(url)) => {
-            self.status =
-                "Доступно обновление".to_string();
+        match check_for_update() {
+            Ok(Some(url)) => {
+                self.status = "Доступно обновление".to_string();
 
-            if let Err(error) =
-                start_updater(&url)
-            {
-                self.status = format!(
-                    "Ошибка обновления: {}",
-                    error
-                );
-            } else {
-                std::process::exit(0);
+                if let Err(error) = start_updater(&url) {
+                    self.status = format!("Ошибка обновления: {}", error);
+                } else {
+                    std::process::exit(0);
+                }
             }
-        }
 
-        Ok(None) => {
-            self.status =
-                format!(
-                    "Launcher v{} — обновлений нет",
-                    VERSION
-                );
+            Ok(None) => {
+                self.status = format!("Launcher v{} — обновлений нет", VERSION);
             }
 
             Err(error) => {
-                /*
-                * Если GitHub недоступен,
-                * НЕ блокируем запуск Minecraft.
-                */
                 self.status = format!(
                     "Не удалось проверить обновления: {}",
                     error
@@ -787,6 +771,7 @@ impl Launcher {
             }
         }
     }
+
 }
 
 // ------------------------------------------------------------
