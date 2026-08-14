@@ -888,16 +888,30 @@ impl Launcher {
             .and_then(|v| v.as_array())
             .ok_or_else(|| "No assets in release".to_string())?;
 
-        for asset in assets {
-            let name = asset
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            
+            // Определяем платформу
+            let platform = if cfg!(target_os = "windows") {
+                "windows"
+            } else if cfg!(target_os = "linux") {
+                "linux"
+            } else {
+                "macos"
+            };
 
-            let url = asset
-                .get("browser_download_url")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+        for asset in assets {
+            let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            
+            if name.contains(platform) {
+            if let Some(url) = asset.get("browser_download_url").and_then(|v| v.as_str()) {
+                return Ok(Some(url.to_string()));
+            }
+        }
+
+            if name.contains(platform) {
+            if let Some(url) = asset.get("browser_download_url").and_then(|v| v.as_str()) {
+                return Ok(Some(url.to_string()));
+            }
+        }
 
             if name == "minecraft.jar" && !found_jar {
                 Self::download_file(client, url, &jar)?;
@@ -941,7 +955,11 @@ impl Launcher {
                 let _ = fs::remove_file(&zip_path);
             }
         }
-
+        for asset in assets {
+            if let Some(url) = asset.get("browser_download_url").and_then(|v| v.as_str()) {
+                return Ok(Some(url.to_string()));
+            }
+        }
         Ok(())
     }
 }

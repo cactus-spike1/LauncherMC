@@ -57,7 +57,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        - os: ubuntu-latest
+          os_name: linux
+        - os: windows-latest
+          os_name: windows
 
     steps:
       - name: Checkout
@@ -104,9 +107,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp target/release/LauncherMC LauncherMC-${{ matrix.os }}
+          cp target/release/LauncherMC LauncherMC-${{ matrix.os_name }}
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-          LauncherMC-${{ matrix.os }} \
+          LauncherMC-${{ matrix.os_name }} \
           --clobber \
           --repo "${{ github.repository }}"
 
@@ -114,9 +117,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp "${{ steps.find.outputs.updater }}" "LauncherMCupdater-${{ matrix.os }}"
+          cp "${{ steps.find.outputs.updater }}" "LauncherMCupdater-${{ matrix.os_name }}"
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "LauncherMCupdater-${{ matrix.os }}" \
+            "LauncherMCupdater-${{ matrix.os_name }}" \
             --clobber \
             --repo "${{ github.repository }}"
 
