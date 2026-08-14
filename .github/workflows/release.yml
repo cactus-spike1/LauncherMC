@@ -105,7 +105,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload '${{ needs.prepare_release.outputs.tag }}' \
-            'target/release/LauncherMC=LauncherMC-${{ matrix.os }}' \
+            'target/release/LauncherMC\=LauncherMC-${{ matrix.os }}' \
             --clobber \
             --repo '${{ github.repository }}'
 
@@ -114,7 +114,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.find.outputs.updater }}=LauncherMCupdater-${{ matrix.os }}" \
+            "${{ steps.find.outputs.updater }}\=LauncherMCupdater-${{ matrix.os }}" \
             --clobber \
             --repo "${{ github.repository }}"
 
@@ -144,6 +144,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.pkg_minecraft.outputs.pkg }}=minecraft-assets-${{ matrix.os }}.zip" \
+            "${{ steps.pkg_minecraft.outputs.pkg }}\=minecraft-assets-${{ matrix.os }}.zip" \
             --clobber \
             --repo "${{ github.repository }}"
