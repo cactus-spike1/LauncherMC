@@ -44,7 +44,6 @@ jobs:
       - name: Prepare output files
         run: |
           mkdir out
-<<<<<<< HEAD
 
           # Linux
           cp target/release/LauncherMC out/LauncherMC-linux
@@ -81,43 +80,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-=======
-
-          # Linux
-          cp target/release/LauncherMC out/LauncherMC-linux
-          cp target/release/LauncherMCupdater out/LauncherMCupdater-linux
-
-          # Windows
-          cp target/x86_64-pc-windows-gnu/release/LauncherMC.exe out/LauncherMC-windows.exe
-          cp target/x86_64-pc-windows-gnu/release/LauncherMCupdater.exe out/LauncherMCupdater-windows.exe
-
-      - name: Package minecraft assets
-        run: |
-          if [ -f minecraft/minecraft.jar ]; then
-            cp minecraft/minecraft.jar out/minecraft.jar
-          fi
-
-          if [ -d minecraft/local-libs ]; then
-            zip -r out/local-libs.zip minecraft/local-libs
-          fi
-
-      - name: Create release if needed
-        if: github.event.inputs.create_release == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.event.inputs.tag }}"
-          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --notes "ArchLinux cross-platform build" \
-              --repo "${{ github.repository }}"
-          fi
-
-      - name: Upload artifacts
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
->>>>>>> d37c9d7fd5fb7b47f06110c86ef6cc90a81b464e
           TAG="${{ github.event.inputs.tag }}"
           gh release upload "$TAG" out/* --clobber --repo "${{ github.repository }}"
