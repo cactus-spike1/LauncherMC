@@ -104,17 +104,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload '${{ needs.prepare_release.outputs.tag }}' \
-            'target/release/LauncherMC\=LauncherMC-${{ matrix.os }}' \
-            --clobber \
-            --repo '${{ github.repository }}'
+          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
+          target/release/LauncherMC \
+          --asset-name "LauncherMC-${{ matrix.os }}" \
+          --clobber \
+          --repo "${{ github.repository }}"
 
       - name: Upload updater
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.find.outputs.updater }}\=LauncherMCupdater-${{ matrix.os }}" \
+            target/release/LauncherMCupdater \
+            --asset-name "LauncherMCupdater-${{ matrix.os }}" \
             --clobber \
             --repo "${{ github.repository }}"
 
@@ -137,13 +139,3 @@ jobs:
             --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload minecraft assets (if packaged)
-        if: steps.pkg_minecraft.outputs.pkg != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            "${{ steps.pkg_minecraft.outputs.pkg }}\=minecraft-assets-${{ matrix.os }}.zip" \
-            --clobber \
-            --repo "${{ github.repository }}"
