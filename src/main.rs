@@ -63,6 +63,7 @@ enum Platform {
 struct Launcher {
     username: String,
     status: String,
+    update_url: Option<String>,
 }
 
 impl Default for Launcher {
@@ -73,6 +74,7 @@ impl Default for Launcher {
                 "Launcher v{}",
                 VERSION
             ),
+            update_url: None,
         }
     }
 }
@@ -747,11 +749,11 @@ impl Launcher {
     }
     fn check_update_on_start(&mut self) {
         self.status = "Проверка обновлений...".to_string();
-
         match check_for_update() {
             Ok(Some(url)) => {
                 self.status = "Доступно обновление".to_string();
 
+                // Запускаем апдейтер автоматически и завершаем лаунчер
                 if let Err(error) = start_updater(&url) {
                     self.status = format!("Ошибка обновления: {}", error);
                 } else {
@@ -1008,6 +1010,25 @@ impl eframe::App for Launcher {
 
                     ui.label(&self.status);
 
+                    if let Some(url) = &self.update_url {
+                        ui.add_space(10.0);
+                        if ui
+                            .add_sized([200.0, 30.0], egui::Button::new("Обновить"))
+                            .clicked()
+                        {
+                            match start_updater(url) {
+                                Ok(_) => {
+                                    // Апдейтер запущен в фоне; оставляем лаунчер открытым
+                                    self.status = "Апдейтер запущен".to_string();
+                                    self.update_url = None; // скрыть кнопку
+                                }
+                                Err(error) => {
+                                    self.status = format!("Ошибка обновления: {}", error);
+                                }
+                            }
+                        }
+                    }
+
                     ui.add_space(30.0);
 
                     ui.small(
@@ -1040,10 +1061,12 @@ fn main() -> eframe::Result<()> {
         "Minecraft 1.16.5 Launcher",
         options,
         Box::new(|_cc| {
-            let mut launcher =
-                Launcher::default();
+            let mut launcher = Launcher::default();
 
-            launcher.check_update_on_start();
+            // Skip auto-update if user set LAUNCHER_SKIP_UPDATE=1
+            if env::var("LAUNCHER_SKIP_UPDATE").ok().as_deref() != Some("1") {
+                launcher.check_update_on_start();
+            }
 
             Ok(Box::new(launcher))
         }),
