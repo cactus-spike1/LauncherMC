@@ -104,9 +104,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cp target/release/LauncherMC LauncherMC-${{ matrix.os }}
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-          target/release/LauncherMC \
-          --asset-name "LauncherMC-${{ matrix.os }}" \
+          LauncherMC-${{ matrix.os }} \
           --clobber \
           --repo "${{ github.repository }}"
 
@@ -114,9 +114,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cp "${{ steps.find.outputs.updater }}" "LauncherMCupdater-${{ matrix.os }}"
           gh release upload "${{ needs.prepare_release.outputs.tag }}" \
-            target/release/LauncherMCupdater \
-            --asset-name "LauncherMCupdater-${{ matrix.os }}" \
+            "LauncherMCupdater-${{ matrix.os }}" \
             --clobber \
             --repo "${{ github.repository }}"
 
