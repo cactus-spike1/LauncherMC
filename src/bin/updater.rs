@@ -22,6 +22,7 @@ fn download(
     url: &str,
     destination: &PathBuf,
 ) -> Result<(), String> {
+    eprintln!("Updater: downloading {} -> {}", url, destination.display());
     let client = Client::builder()
         .user_agent("MinecraftLauncherUpdater")
         .build()
@@ -45,7 +46,11 @@ fn download(
         .bytes()
         .map_err(|e| e.to_string())?;
 
+    eprintln!("Updater: downloaded {} bytes", data.len());
+
     let temp = destination.with_extension("update");
+
+    eprintln!("Updater: writing temp file {}", temp.display());
 
     let mut file =
         fs::File::create(&temp)
@@ -54,6 +59,8 @@ fn download(
     file.write_all(&data)
         .map_err(|e| e.to_string())?;
 
+    eprintln!("Updater: renaming {} -> {}", temp.display(), destination.display());
+
     fs::rename(&temp, destination)
         .map_err(|e| {
             format!(
@@ -61,6 +68,8 @@ fn download(
                 e
             )
         })?;
+
+    eprintln!("Updater: replace successful");
 
     Ok(())
 }
