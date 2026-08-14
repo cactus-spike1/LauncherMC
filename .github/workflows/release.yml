@@ -27,7 +27,7 @@ jobs:
             rustup \
             mingw-w64-gcc \
             zip \
-            gh
+            github-cli
 
           rustup default stable
           rustup target add x86_64-pc-windows-gnu
