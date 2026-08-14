@@ -3,6 +3,15 @@ name: Release build (multi-OS)
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create/use (e.g. v0.1.0)'
+        required: true
+      create_release:
+        description: 'Create release if not exists (true/false)'
+        required: false
+        default: 'true'
 
 jobs:
   build:
@@ -14,6 +23,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Create release (on manual run)
+        if: github.event_name == 'workflow_dispatch' && inputs.create_release == 'true'
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          release_name: ${{ github.event.inputs.tag }}
+          body: "Automated build from workflow_dispatch"
+          draft: false
+          prerelease: false
 
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -59,7 +79,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-upload-release-asset@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
+          upload_url: ${{ github.event_name == 'release' && github.event.release.upload_url || steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find.outputs.launcher }}
           asset_name: LauncherMC-${{ matrix.os }}
           asset_content_type: application/octet-stream
@@ -69,7 +89,7 @@ jobs:
       - name: Upload updater to GitHub Release
         uses: softprops/action-upload-release-asset@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
+          upload_url: ${{ github.event_name == 'release' && github.event.release.upload_url || steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find.outputs.updater }}
           asset_name: LauncherMCupdater-${{ matrix.os }}
           asset_content_type: application/octet-stream
@@ -80,7 +100,7 @@ jobs:
         if: steps.pkg_minecraft.outputs.pkg != ''
         uses: softprops/action-upload-release-asset@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
+          upload_url: ${{ github.event_name == 'release' && github.event.release.upload_url || steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.pkg_minecraft.outputs.pkg }}
           asset_name: minecraft-assets-${{ matrix.os }}.zip
           asset_content_type: application/zip
