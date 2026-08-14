@@ -26,7 +26,6 @@ jobs:
             git \
             rustup \
             mingw-w64-gcc \
-            zip \
             github-cli
 
           rustup default stable
