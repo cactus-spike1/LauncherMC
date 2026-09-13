@@ -5,26 +5,38 @@ edition = "2021"
 default-run = "LauncherMC"
 
 [dependencies]
+uuid = {
+    version = "1.24.1",
+    features = ["v4"]
+}
 eframe = "0.32"
 reqwest = {
     version = "0.12",
     default-features = false,
     features = ["blocking", "rustls-tls", "json"]
 }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net"] }
 serde = {
     version = "1",
     features = ["derive"]
 }
 serde_json = "1"
 zip = "0.6"
+sha2 = "0.10"
+hex = "0.4"
 
 [[bin]]
 name = "LauncherMC"
-path = "src/main.rs"
+path = "src/launcher/main.rs"
 
 [[bin]]
 name = "LauncherMCupdater"
-path = "src/bin/updater.rs"
+path = "src/updater.rs"
+
+[[bin]]
+name = "LauncherMCcore"
+path = "src/core/main.rs"
+
 [profile.release]
 opt-level = 3
 lto = false
