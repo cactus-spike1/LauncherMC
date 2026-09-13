@@ -6,6 +6,7 @@ use std::net::{TcpListener, TcpStream};
 
 use std::process::Child;
 
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -105,7 +106,7 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<Option<Child>>>) {
 
     if let Some(p) = peer {
         eprintln!("Connection closed: {:?}", p);
-        state.lock().unwrap().take(); // убиваем процесс, если он был запущен
+        exit(0);
     }
 }
 
