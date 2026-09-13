@@ -17,6 +17,14 @@ use mc::minecraft_run::prepare_and_launch;
 
 const SOCKET_ADDR: &str = "127.0.0.1:31337";
 
+fn latest_progress() -> String {
+    let path = paths::minecraft_dir().join("core.log");
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|log| log.lines().last().map(str::to_owned))
+        .unwrap_or_else(|| "Core is ready".to_string())
+}
+
 fn write_response(stream: &mut TcpStream, v: &Value) -> std::io::Result<()> {
     let s = serde_json::to_string(v).unwrap();
     stream.write_all(s.as_bytes())?;
@@ -63,7 +71,11 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<Option<Child>>>) {
 
                 let resp = match cmd {
                     "hello" => json!({"status":"ok","msg":"launcher_connected"}),
-                    "ping" => json!({"status":"ok","cmd":"pong"}),
+                    "ping" => json!({
+                        "status":"ok",
+                        "cmd":"pong",
+                        "msg": latest_progress()
+                    }),
 
                     "status" => {
                         let guard = state.lock().unwrap();

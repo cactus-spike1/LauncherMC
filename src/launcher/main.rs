@@ -75,8 +75,15 @@ impl Launcher {
         }
 
         self.last_heartbeat = Instant::now();
-        if let Err(error) = self.send_core_command("ping", None) {
-            self.status = format!("Core error: {}", error);
+        match self.send_core_command("ping", None) {
+            Ok(response) => {
+                if let Some(progress) = response.get("msg").and_then(|msg| msg.as_str()) {
+                    self.status = progress.to_string();
+                }
+            }
+            Err(error) => {
+                self.status = format!("Core error: {}", error);
+            }
         }
     }
 
