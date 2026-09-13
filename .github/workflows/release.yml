@@ -6,8 +6,8 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag (e.g. v0.1.0)"
+      version:
+        description: "Version without v (e.g. 0.1.0)"
         required: true
       create_release:
         description: "Create release if not exists"
@@ -36,49 +36,74 @@ jobs:
 
       - name: Build Linux and Windows binaries
         run: |
-          cargo build --release --bins &
-          cargo build --release --bins --target x86_64-pc-windows-gnu &
-          wait
+          cargo build --release --bins
+          cargo build --release --bins --target x86_64-pc-windows-gnu
 
       - name: Prepare output files
         run: |
-          mkdir out
+          mkdir -p out/main out/installer
 
-          # Linux
-          cp target/release/LauncherMC out/LauncherMC-linux
-          cp target/release/LauncherMCupdater out/LauncherMCupdater-linux
+          copy_binary() {
+            local name=$1
+            local src_dir=$2
+            local suffix=$3
+            local source="$src_dir/$name"
 
-          # Windows
-          cp target/x86_64-pc-windows-gnu/release/LauncherMC.exe out/LauncherMC-windows.exe
-          cp target/x86_64-pc-windows-gnu/release/LauncherMCupdater.exe out/LauncherMCupdater-windows.exe
+            if [ -f "$source" ]; then
+              cp "$source" "out/$4/${name}${suffix}"
+            elif [ -f "${source}.exe" ]; then
+              cp "${source}.exe" "out/$4/${name}${suffix}"
+            else
+              echo "Binary not found: $source"
+              exit 1
+            fi
+          }
 
-      - name: Package minecraft assets
-        run: |
-          if [ -f mc/minecraft.jar ]; then
-            cp mc/minecraft.jar out/minecraft.jar
-          fi
+          copy_binary LauncherMC target/release -linux main
+          copy_binary LauncherMCcore target/release -linux main
+          copy_binary LauncherMC target/x86_64-pc-windows-gnu/release -windows.exe main
+          copy_binary LauncherMCcore target/x86_64-pc-windows-gnu/release -windows.exe main
 
-          if [ -f mc/local-libs.zip ]; then
-            cp mc/local-libs.zip out/local-libs.zip 
-          fi
+          copy_binary LauncherMCupdater target/release -linux installer
+          copy_binary LauncherMCupdater target/x86_64-pc-windows-gnu/release -windows.exe installer
 
-      - name: Create release if needed
+          for file in out/main/* out/installer/*; do
+            sha256sum "$file" > "$file.sha256"
+          done
+
+      - name: Create releases if needed
         if: github.event.inputs.create_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.event.inputs.tag }}"
-          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --notes "ArchLinux cross-platform build" \
+          VERSION="${{ github.event.inputs.version }}"
+          MAIN_TAG="v${VERSION}"
+          INSTALLER_TAG="v${VERSION}-installer"
+
+          if ! gh release view "$MAIN_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$MAIN_TAG" \
+              --title "$MAIN_TAG" \
+              --notes "LauncherMC and LauncherMCcore ${VERSION}" \
               --repo "${{ github.repository }}"
           fi
 
-      - name: Upload artifacts
+          if ! gh release view "$INSTALLER_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$INSTALLER_TAG" \
+              --title "$INSTALLER_TAG" \
+              --notes "LauncherMCupdater installer ${VERSION}" \
+              --repo "${{ github.repository }}"
+          fi
+
+      - name: Upload main components
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ls out/
-          TAG="${{ github.event.inputs.tag }}"
-          gh release upload "$TAG" out/* --clobber --repo "${{ github.repository }}"
+          VERSION="${{ github.event.inputs.version }}"
+          gh release upload "v${VERSION}" out/main/* --clobber --repo "${{ github.repository }}"
+
+      - name: Upload installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          gh release upload "v${VERSION}-installer" out/installer/* --clobber --repo "${{ github.repository }}"
