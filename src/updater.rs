@@ -1,5 +1,6 @@
 use hex::encode;
 use reqwest::Client;
+use semver::Version;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -19,7 +20,8 @@ use std::os::unix::fs::PermissionsExt;
 // ============================================================
 
 const GITHUB_REPOSITORY: &str = "cactus-spike1/LauncherMC";
-const RELEASE_TAG: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const INSTALLER_SUFFIX: &str = "-installer";
 
 #[cfg(unix)]
 const CORE_ASSET_NAME: &str = "LauncherMCcore-linux";
@@ -31,6 +33,11 @@ const LAUNCHER_ASSET_NAME: &str = "LauncherMC-linux";
 #[cfg(windows)]
 const LAUNCHER_ASSET_NAME: &str = "LauncherMC-windows.exe";
 
+#[cfg(unix)]
+const UPDATER_ASSET_NAME: &str = "LauncherMCupdater-linux";
+#[cfg(windows)]
+const UPDATER_ASSET_NAME: &str = "LauncherMCupdater-windows.exe";
+
 const CORE_NAME: &str = "core";
 const LAUNCHER_NAME: &str = "launcher";
 
@@ -41,6 +48,7 @@ const CORE_PORT: u16 = 31337;
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
+    tag_name: String,
     assets: Vec<GithubAsset>,
 }
 
@@ -54,6 +62,40 @@ struct GithubAsset {
 struct DownloadInfo {
     url: String,
     sha256: String,
+}
+
+fn release_version(tag: &str) -> Option<Version> {
+    tag.strip_prefix('v')?
+        .strip_suffix(INSTALLER_SUFFIX)?
+        .parse()
+        .ok()
+}
+
+async fn latest_installer_release(client: &Client) -> Result<(String, Version), String> {
+    let releases_url = format!(
+        "https://api.github.com/repos/{}/releases?per_page=100",
+        GITHUB_REPOSITORY
+    );
+
+    let releases = client
+        .get(releases_url)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("GitHub releases request failed: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("GitHub releases returned an error: {}", e))?
+        .json::<Vec<GithubRelease>>()
+        .await
+        .map_err(|e| format!("Invalid GitHub releases response: {}", e))?;
+
+    releases
+        .into_iter()
+        .filter_map(|release| {
+            release_version(&release.tag_name).map(|version| (release.tag_name, version))
+        })
+        .max_by(|(_, left), (_, right)| left.cmp(right))
+        .ok_or_else(|| "No installer releases found on GitHub".to_string())
 }
 
 async fn github_asset(
@@ -122,6 +164,56 @@ async fn github_asset(
         url: asset.browser_download_url.clone(),
         sha256,
     })
+}
+
+async fn update_updater_if_needed(
+    client: &Client,
+    current_exe: &Path,
+    skip_update: bool,
+) -> Result<bool, String> {
+    let (installer_tag, latest_version) = latest_installer_release(client).await?;
+    let current_version = Version::parse(CURRENT_VERSION)
+        .map_err(|e| format!("Invalid updater version {}: {}", CURRENT_VERSION, e))?;
+
+    if skip_update || latest_version <= current_version {
+        eprintln!(
+            "Updater: current version {} is up to date with {}",
+            current_version, latest_version
+        );
+        return Ok(false);
+    }
+
+    eprintln!(
+        "Updater: updating updater {} -> {}",
+        current_version, latest_version
+    );
+
+    let updater_info = github_asset(client, &installer_tag, UPDATER_ASSET_NAME).await?;
+    if current_exe.is_file() {
+        let current_sha256 = file_sha256(current_exe)?;
+        if current_sha256.eq_ignore_ascii_case(&updater_info.sha256) {
+            eprintln!("Updater: updater SHA-256 already matches");
+            return Ok(false);
+        }
+    }
+
+    let temp_path = if cfg!(windows) {
+        current_exe.with_file_name("LauncherMCupdater.new.exe")
+    } else {
+        current_exe.with_file_name("LauncherMCupdater.new")
+    };
+
+    download(
+        client,
+        &updater_info.url,
+        &temp_path,
+        Some(&updater_info.sha256),
+    )
+    .await?;
+
+    launch_application_with_args(&temp_path, &["--skip-updater-update"])?;
+    eprintln!("Updater: handed installation to {}", temp_path.display());
+    Ok(true)
 }
 
 // ============================================================
@@ -201,6 +293,13 @@ async fn download(
     Ok(())
 }
 
+fn file_sha256(path: &Path) -> Result<String, String> {
+    let data = fs::read(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    Ok(encode(hasher.finalize()))
+}
+
 // ============================================================
 // REPLACE
 // ============================================================
@@ -258,6 +357,20 @@ async fn install_component(
         Some(expected_sha256)
     };
 
+    if let Some(expected) = checksum {
+        if destination.is_file() {
+            let actual = file_sha256(&destination)?;
+            if actual.eq_ignore_ascii_case(expected.trim()) {
+                eprintln!(
+                    "Updater: {} is already up to date (SHA-256 matches)",
+                    destination.display()
+                );
+                return Ok(destination);
+            }
+            eprintln!("Updater: {} has an outdated SHA-256", destination.display());
+        }
+    }
+
     download(client, url, &destination, checksum).await?;
 
     Ok(destination)
@@ -268,9 +381,14 @@ async fn install_component(
 // ============================================================
 
 fn launch_application(application: &Path) -> Result<(), String> {
+    launch_application_with_args(application, &[])
+}
+
+fn launch_application_with_args(application: &Path, args: &[&str]) -> Result<(), String> {
     eprintln!("Updater: launching {}", application.display());
 
     let child = Command::new(application)
+        .args(args)
         .spawn()
         .map_err(|e| format!("Failed to start {}: {}", application.display(), e))?;
 
@@ -310,7 +428,7 @@ async fn wait_for_core() -> Result<(), String> {
 // INSTALL FLOW
 // ============================================================
 
-async fn main_install_flow() -> Result<(), String> {
+async fn main_install_flow(skip_updater_update: bool) -> Result<(), String> {
     let install_dir = env::current_dir()
         .map_err(|e| e.to_string())?
         .join(INSTALL_DIR_NAME);
@@ -325,9 +443,21 @@ async fn main_install_flow() -> Result<(), String> {
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
+    let current_exe =
+        env::current_exe().map_err(|e| format!("Failed to locate current updater: {}", e))?;
+
+    if update_updater_if_needed(&client, &current_exe, skip_updater_update).await? {
+        return Ok(());
+    }
+
+    let (installer_tag, _) = latest_installer_release(&client).await?;
+    let release_tag = installer_tag
+        .strip_suffix(INSTALLER_SUFFIX)
+        .ok_or_else(|| format!("Invalid installer release tag: {}", installer_tag))?;
+
     let (core_info, launcher_info) = tokio::join!(
-        github_asset(&client, RELEASE_TAG, CORE_ASSET_NAME),
-        github_asset(&client, RELEASE_TAG, LAUNCHER_ASSET_NAME),
+        github_asset(&client, release_tag, CORE_ASSET_NAME),
+        github_asset(&client, release_tag, LAUNCHER_ASSET_NAME),
     );
 
     let core_info = core_info?;
@@ -398,7 +528,9 @@ async fn main_install_flow() -> Result<(), String> {
 
 #[tokio::main]
 async fn main() {
-    if let Err(error) = main_install_flow().await {
+    let skip_updater_update = env::args().any(|arg| arg == "--skip-updater-update");
+
+    if let Err(error) = main_install_flow(skip_updater_update).await {
         eprintln!("Updater error: {}", error);
         std::process::exit(1);
     }
