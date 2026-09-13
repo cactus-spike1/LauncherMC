@@ -1,7 +1,6 @@
 use serde_json::json;
 use serde_json::Value;
 
-
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 
@@ -106,6 +105,7 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<Option<Child>>>) {
 
     if let Some(p) = peer {
         eprintln!("Connection closed: {:?}", p);
+        state.lock().unwrap().take(); // убиваем процесс, если он был запущен
     }
 }
 
