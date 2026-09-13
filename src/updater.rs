@@ -211,9 +211,52 @@ async fn update_updater_if_needed(
     )
     .await?;
 
-    launch_application_with_args(&temp_path, &["--skip-updater-update"])?;
+    let replace_arg = format!("--replace-target={}", current_exe.display());
+    launch_application_with_args(&temp_path, &[&replace_arg])?;
     eprintln!("Updater: handed installation to {}", temp_path.display());
     Ok(true)
+}
+
+async fn replace_updater_and_restart(target: &Path) -> Result<(), String> {
+    let current_exe =
+        env::current_exe().map_err(|e| format!("Failed to locate downloaded updater: {}", e))?;
+
+    for attempt in 1..=50 {
+        #[cfg(windows)]
+        if target.exists() {
+            if let Err(error) = fs::remove_file(target) {
+                if attempt == 50 {
+                    return Err(format!("Failed to replace old updater: {}", error));
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+        }
+
+        match fs::rename(&current_exe, target) {
+            Ok(()) => {
+                #[cfg(unix)]
+                if let Err(error) = fs::set_permissions(target, fs::Permissions::from_mode(0o755)) {
+                    eprintln!("Updater: failed to set executable permission: {}", error);
+                }
+
+                launch_application_with_args(target, &["--skip-updater-update"])?;
+                return Ok(());
+            }
+            Err(error) if attempt < 50 => {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                eprintln!(
+                    "Updater: waiting to replace old updater ({}/50): {}",
+                    attempt, error
+                );
+            }
+            Err(error) => {
+                return Err(format!("Failed to install new updater: {}", error));
+            }
+        }
+    }
+
+    Err("Failed to install new updater".to_string())
 }
 
 // ============================================================
@@ -442,6 +485,18 @@ async fn main_install_flow(skip_updater_update: bool) -> Result<(), String> {
         .timeout(Duration::from_secs(300))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let mut replace_target = None;
+    for argument in env::args().skip(1) {
+        if let Some(target) = argument.strip_prefix("--replace-target=") {
+            replace_target = Some(PathBuf::from(target));
+        }
+    }
+
+    if let Some(target) = replace_target {
+        replace_updater_and_restart(&target).await?;
+        return Ok(());
+    }
 
     let current_exe =
         env::current_exe().map_err(|e| format!("Failed to locate current updater: {}", e))?;

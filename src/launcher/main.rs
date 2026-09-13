@@ -5,6 +5,7 @@ use std::{
 };
 
 use std::net::TcpStream;
+use std::time::{Duration, Instant};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -13,6 +14,7 @@ struct Launcher {
     status: String,
     stream: Option<TcpStream>,
     reader: Option<BufReader<TcpStream>>,
+    last_heartbeat: Instant,
 }
 
 impl Default for Launcher {
@@ -22,6 +24,7 @@ impl Default for Launcher {
             status: format!("Launcher v{}", VERSION),
             stream: None,
             reader: None,
+            last_heartbeat: Instant::now(),
         }
     }
 }
@@ -34,6 +37,8 @@ impl Launcher {
         stream.set_nodelay(true).ok();
         self.reader = Some(BufReader::new(stream.try_clone().unwrap()));
         self.stream = Some(stream);
+
+        self.send_core_command("hello", None)?;
 
         Ok(())
     }
@@ -62,6 +67,17 @@ impl Launcher {
         let v: serde_json::Value = serde_json::from_str(resp.trim()).map_err(|e| e.to_string())?;
 
         Ok(v)
+    }
+
+    fn send_heartbeat(&mut self) {
+        if self.last_heartbeat.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+
+        self.last_heartbeat = Instant::now();
+        if let Err(error) = self.send_core_command("ping", None) {
+            self.status = format!("Core error: {}", error);
+        }
     }
 
     fn format_core(&self, v: &serde_json::Value) -> String {
@@ -144,6 +160,9 @@ impl Launcher {
 
 impl eframe::App for Launcher {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.send_heartbeat();
+        ctx.request_repaint_after(Duration::from_millis(500));
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(40.0);
