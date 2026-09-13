@@ -1,14 +1,14 @@
 use serde_json::json;
 use serde_json::Value;
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::net::{TcpListener, TcpStream};
 
 use std::process::Child;
 
-use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 mod dependencies;
 mod mc;
@@ -26,8 +26,11 @@ fn write_response(stream: &mut TcpStream, v: &Value) -> std::io::Result<()> {
 
 fn handle_client(mut stream: TcpStream, state: Arc<Mutex<Option<Child>>>) {
     let peer = stream.peer_addr().ok();
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut buf = Vec::new();
+    let mut last_activity = Instant::now();
+    let mut is_launcher_client = false;
 
     loop {
         buf.clear();
@@ -36,6 +39,7 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<Option<Child>>>) {
         match reader.read_until(b'\n', &mut buf) {
             Ok(0) => break, // клиент закрыл соединение
             Ok(_) => {
+                last_activity = Instant::now();
                 let line = String::from_utf8_lossy(&buf).trim().to_string();
 
                 if line.is_empty() {
@@ -53,7 +57,12 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<Option<Child>>>) {
 
                 let cmd = v.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
 
+                if cmd == "hello" {
+                    is_launcher_client = true;
+                }
+
                 let resp = match cmd {
+                    "hello" => json!({"status":"ok","msg":"launcher_connected"}),
                     "ping" => json!({"status":"ok","cmd":"pong"}),
 
                     "status" => {
@@ -100,13 +109,23 @@ fn handle_client(mut stream: TcpStream, state: Arc<Mutex<Option<Child>>>) {
                 let _ = write_response(&mut stream, &resp);
             }
 
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                if last_activity.elapsed() >= Duration::from_secs(8) {
+                    eprintln!("Core: launcher heartbeat timed out");
+                    break;
+                }
+            }
             Err(_) => break,
         }
     }
 
-    if let Some(p) = peer {
+    if is_launcher_client {
+        if let Some(p) = peer {
+            eprintln!("Connection closed: {:?}", p);
+        }
+        std::process::exit(1);
+    } else if let Some(p) = peer {
         eprintln!("Connection closed: {:?}", p);
-        exit(0);
     }
 }
 
