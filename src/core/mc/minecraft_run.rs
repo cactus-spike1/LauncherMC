@@ -79,6 +79,7 @@ pub fn prepare_and_launch(username: &str) -> Result<u32, String> {
         .user_agent("SimpleMinecraftLauncher/1.0")
         .build()
         .map_err(|e| e.to_string())?;
+
     dependencies::ensure_minecraft_artifacts(&client).map_err(|e| e.to_string())?;
     if !paths::minecraft_jar().exists() {
         return Err(format!(

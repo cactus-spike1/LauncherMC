@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use reqwest::blocking::Client;
 use std::io::copy;
@@ -10,6 +11,13 @@ use zip::ZipArchive;
 use super::paths::*;
 
 const DEPENDENCIES: &[&str] = &[
+    "org.lwjgl:lwjgl:3.4.3",
+    "org.lwjgl:lwjgl-assimp:3.4.3",
+    "org.lwjgl:lwjgl-glfw:3.4.3",
+    "org.lwjgl:lwjgl-openal:3.4.3",
+    "org.lwjgl:lwjgl-opengl:3.4.3",
+    "org.lwjgl:lwjgl-stb:3.4.3",
+    "org.lwjgl:lwjgl-tinyfd:3.4.3",
     "com.google.code.findbugs:jsr305:3.0.2",
     "org.apache.commons:commons-lang3:3.18.0",
     "commons-io:commons-io:2.19.0",
@@ -42,6 +50,11 @@ const LWJGL_NATIVE_MODULES: &[&str] = &[
 ];
 
 fn download_file(client: &Client, url: &str, destination: &Path) -> Result<(), String> {
+    let display_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("file");
+
     // Проверка существующего файла
     if destination.exists() {
         core_log(&format!(
@@ -66,7 +79,7 @@ fn download_file(client: &Client, url: &str, destination: &Path) -> Result<(), S
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    core_log("Sending HTTP request...");
+    progress_log(&format!("Downloading {}: connecting...", display_name));
 
     // Добавляем таймауты и follow_redirects
     let response = client
@@ -93,7 +106,10 @@ fn download_file(client: &Client, url: &str, destination: &Path) -> Result<(), S
 
     let content_length = response.content_length().unwrap_or(0);
 
-    core_log(&format!("Content-Length: {} bytes", content_length));
+    progress_log(&format!(
+        "Downloading {}: 0.0% ({} bytes)",
+        display_name, content_length
+    ));
 
     let temp = destination.with_extension("download");
 
@@ -109,6 +125,8 @@ fn download_file(client: &Client, url: &str, destination: &Path) -> Result<(), S
         let mut downloaded = 0u64;
         let mut buffer = vec![0u8; 1024 * 1024]; // 1 МБ буфер
         let mut reader = response;
+        let started = Instant::now();
+        let mut last_reported_percent = 0u64;
 
         loop {
             match std::io::Read::read(&mut reader, &mut buffer) {
@@ -118,14 +136,28 @@ fn download_file(client: &Client, url: &str, destination: &Path) -> Result<(), S
 
                     downloaded += n as u64;
 
-                    if content_length > 0 {
-                        let percent = (downloaded as f64 / content_length as f64) * 100.0;
-                        core_log(&format!(
-                            "Downloaded: {} / {} bytes ({:.1}%)",
-                            downloaded, content_length, percent
-                        ));
+                    let percent = if content_length > 0 {
+                        (downloaded.saturating_mul(100) / content_length) as u64
                     } else {
-                        core_log(&format!("Downloaded: {} bytes", downloaded));
+                        0
+                    };
+                    if content_length > 0 && percent > last_reported_percent {
+                        last_reported_percent = percent;
+                        let speed = downloaded as f64 / started.elapsed().as_secs_f64().max(0.001);
+                        progress_log(&format!(
+                            "Downloading {}: {}% ({:.1} MB/s)",
+                            display_name,
+                            percent,
+                            speed / 1_048_576.0
+                        ));
+                    } else if content_length == 0 {
+                        let speed = downloaded as f64 / started.elapsed().as_secs_f64().max(0.001);
+                        progress_log(&format!(
+                            "Downloading {}: {} bytes ({:.1} MB/s)",
+                            display_name,
+                            downloaded,
+                            speed / 1_048_576.0
+                        ));
                     }
                 }
                 Err(e) => {
@@ -139,7 +171,10 @@ fn download_file(client: &Client, url: &str, destination: &Path) -> Result<(), S
 
         file.sync_all().map_err(|e| e.to_string())?;
 
-        core_log(&format!("Download complete: {} bytes total", downloaded));
+        progress_log(&format!(
+            "Downloaded {}: 100% ({} bytes)",
+            display_name, downloaded
+        ));
     }
 
     // Валидация архива
@@ -158,7 +193,7 @@ fn download_file(client: &Client, url: &str, destination: &Path) -> Result<(), S
     // Атомарный rename
     fs::rename(&temp, destination).map_err(|e| format!("failed moving file: {}", e))?;
 
-    core_log(&format!("File saved to: {}", destination.display()));
+    progress_log(&format!("Ready: {}", display_name));
 
     Ok(())
 }
@@ -181,7 +216,10 @@ pub fn ensure_minecraft_artifacts(client: &Client) -> Result<(), String> {
 
     // Скачиваем minecraft.jar
     if !jar.exists() {
+        progress_log("Preparing minecraft.jar");
         download_file(client, jar_url, &jar)?;
+    } else {
+        progress_log("minecraft.jar: already installed");
     }
 
     // Скачиваем и распаковываем local-libs.zip
@@ -227,7 +265,9 @@ pub fn download_dependencies() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     fs::create_dir_all(libraries_dir()).map_err(|e| e.to_string())?;
-    for dependency in DEPENDENCIES {
+    let total = DEPENDENCIES.len();
+    for (index, dependency) in DEPENDENCIES.iter().enumerate() {
+        progress_log(&format!("Libraries: {}/{}", index + 1, total));
         let (group, artifact, version) = parse_dependency(dependency)?;
         let url = maven_url(group, artifact, version);
         let destination = maven_path(group, artifact, version);
@@ -250,7 +290,9 @@ pub fn download_natives() -> Result<Vec<PathBuf>, String> {
     };
     fs::create_dir_all(libraries_dir()).map_err(|e| e.to_string())?;
     let mut native_jars = Vec::new();
-    for dependency in LWJGL_NATIVE_MODULES {
+    let total = LWJGL_NATIVE_MODULES.len();
+    for (index, dependency) in LWJGL_NATIVE_MODULES.iter().enumerate() {
+        progress_log(&format!("Native libraries: {}/{}", index + 1, total));
         let (group, artifact, version) = parse_dependency(dependency)?;
         let url = native_url(group, artifact, version, platform);
         let destination = native_path(group, artifact, version, platform);
@@ -310,6 +352,11 @@ fn core_log(message: &str) {
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(file, "{}", message);
     }
+}
+
+fn progress_log(message: &str) {
+    core_log(message);
+    eprintln!("Core: {}", message);
 }
 
 fn parse_dependency(dep: &str) -> Result<(&str, &str, &str), String> {
