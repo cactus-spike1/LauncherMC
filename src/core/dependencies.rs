@@ -11,18 +11,11 @@ use zip::ZipArchive;
 use super::paths::*;
 
 const DEPENDENCIES: &[&str] = &[
-    "org.lwjgl:lwjgl:3.4.3",
-    "org.lwjgl:lwjgl-assimp:3.4.3",
-    "org.lwjgl:lwjgl-glfw:3.4.3",
-    "org.lwjgl:lwjgl-openal:3.4.3",
-    "org.lwjgl:lwjgl-opengl:3.4.3",
-    "org.lwjgl:lwjgl-stb:3.4.3",
-    "org.lwjgl:lwjgl-tinyfd:3.4.3",
     "com.google.code.findbugs:jsr305:3.0.2",
     "org.apache.commons:commons-lang3:3.18.0",
     "commons-io:commons-io:2.19.0",
     "commons-codec:commons-codec:1.18.0",
-    "commons-logging:commons-logging:1.1.3.5",
+    "commons-logging:commons-logging:1.3.5",
     "org.apache.commons:commons-compress:1.28.0",
     "org.apache.httpcomponents.client5:httpclient5:5.6.4",
     "org.apache.httpcomponents.core5:httpcore5:5.4.3",
