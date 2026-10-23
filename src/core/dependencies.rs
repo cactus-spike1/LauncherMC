@@ -24,6 +24,7 @@ const DEPENDENCIES: &[&str] = &[
     "org.apache.logging.log4j:log4j-core:2.24.3",
     "com.google.code.gson:gson:2.12.1",
     "com.google.guava:guava:33.4.0-jre",
+    "com.google.guava:failureaccess:1.0.3",
     "io.netty:netty-all:4.1.25.Final",
     "net.sf.jopt-simple:jopt-simple:5.0.4",
     "it.unimi.dsi:fastutil:8.5.14",
