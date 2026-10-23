@@ -7,7 +7,8 @@ use std::time::Instant;
 use super::paths::*;
 use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
-use std::io::{copy, Read};
+use std::io::copy;
+use std::io::Read;
 
 use zip::ZipArchive;
 
