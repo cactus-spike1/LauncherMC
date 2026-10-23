@@ -30,6 +30,13 @@ const DEPENDENCIES: &[&str] = &[
     "ca.weblite:java-objc-bridge:1.0.0",
     "com.ibm.icu:icu4j:76.1",
     "net.java.dev.jna:jna-platform:5.16.0",
+    "org.lwjgl:lwjgl:3.4.3",
+    "org.lwjgl:lwjgl-assimp:3.4.3",
+    "org.lwjgl:lwjgl-glfw:3.4.3",
+    "org.lwjgl:lwjgl-openal:3.4.3",
+    "org.lwjgl:lwjgl-opengl:3.4.3",
+    "org.lwjgl:lwjgl-stb:3.4.3",
+    "org.lwjgl:lwjgl-tinyfd:3.4.3",
 ];
 
 const LWJGL_NATIVE_MODULES: &[&str] = &[
