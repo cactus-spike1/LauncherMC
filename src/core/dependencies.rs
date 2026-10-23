@@ -4,11 +4,12 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use reqwest::blocking::Client;
-use std::io::copy;
-use zip::ZipArchive;
-
 use super::paths::*;
+use reqwest::blocking::Client;
+use sha2::{Digest, Sha256};
+use std::io::{copy, Read};
+
+use zip::ZipArchive;
 
 const DEPENDENCIES: &[&str] = &[
     "com.google.code.findbugs:jsr305:3.0.2",
@@ -205,26 +206,101 @@ fn is_archive_file(path: &Path) -> bool {
         .map(|x| x.eq_ignore_ascii_case("zip") || x.eq_ignore_ascii_case("jar"))
         .unwrap_or(false)
 }
+fn fetch_sha256(client: &Client, url: &str) -> Result<String, String> {
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|e| format!("failed to download checksum: {e}"))?;
 
-pub fn ensure_minecraft_artifacts(client: &Client) -> Result<(), String> {
-    let jar = minecraft_jar();
-    let local_libs_dir = local_libraries_dir();
-
-    // Прямые URL для Git LFS файлов
-    let jar_url = "https://media.githubusercontent.com/media/cactus-spike1/LauncherMC/refs/heads/main/mc/minecraft.jar";
-    let libs_url = "https://media.githubusercontent.com/media/cactus-spike1/LauncherMC/refs/heads/main/mc/local-libs.zip";
-
-    // Скачиваем minecraft.jar
-    if !jar.exists() {
-        progress_log("Preparing minecraft.jar");
-        download_file(client, jar_url, &jar)?;
-    } else {
-        progress_log("minecraft.jar: already installed");
+    if !response.status().is_success() {
+        return Err(format!(
+            "checksum request returned HTTP {}",
+            response.status()
+        ));
     }
 
-    // Скачиваем и распаковываем local-libs.zip
+    let body = response
+        .text()
+        .map_err(|e| format!("failed to read checksum: {e}"))?;
+
+    // Принимает как просто хэш, так и формат "хэш  имя-файла".
+    let hash = body
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| "checksum file is empty".to_string())?
+        .to_ascii_lowercase();
+
+    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("checksum file does not contain a valid SHA-256 hash".to_string());
+    }
+
+    Ok(hash)
+}
+
+fn ensure_file_matches_sha256(
+    client: &Client,
+    name: &str,
+    file_url: &str,
+    checksum_url: &str,
+    destination: &Path,
+) -> Result<(), String> {
+    let expected_hash = fetch_sha256(client, checksum_url)?;
+
+    let matches = destination.exists()
+        && sha256_file(destination)
+            .map(|hash| hash.eq_ignore_ascii_case(&expected_hash))
+            .unwrap_or(false);
+
+    if matches {
+        progress_log(&format!("{name}: SHA-256 matches"));
+        return Ok(());
+    }
+
+    progress_log(&format!("{name} is missing or outdated; downloading"));
+
+    if destination.exists() {
+        fs::remove_file(destination)
+            .map_err(|e| format!("failed to remove outdated {name}: {e}"))?;
+    }
+
+    download_file(client, file_url, destination)?;
+
+    let actual_hash = sha256_file(destination)?;
+    if !actual_hash.eq_ignore_ascii_case(&expected_hash) {
+        let _ = fs::remove_file(destination);
+        return Err(format!(
+            "{name} SHA-256 mismatch: expected {expected_hash}, got {actual_hash}"
+        ));
+    }
+
+    progress_log(&format!("{name} downloaded and SHA-256 verified"));
+    Ok(())
+}
+
+pub fn ensure_minecraft_artifacts(client: &Client) -> Result<(), String> {
+    const MEDIA_BASE: &str =
+        "https://media.githubusercontent.com/media/cactus-spike1/LauncherMC/refs/heads/main/mc";
+    const RAW_BASE: &str = "https://raw.githubusercontent.com/cactus-spike1/LauncherMC/main/mc";
+
+    let jar = minecraft_jar();
     let zip_path = minecraft_dir().join("local-libs.zip");
-    download_file(client, libs_url, &zip_path)?;
+    let local_libs_dir = local_libraries_dir();
+
+    ensure_file_matches_sha256(
+        client,
+        "minecraft.jar",
+        &format!("{MEDIA_BASE}/minecraft.jar"),
+        &format!("{RAW_BASE}/minecraft.jar.sha256"),
+        &jar,
+    )?;
+
+    ensure_file_matches_sha256(
+        client,
+        "local-libs.zip",
+        &format!("{MEDIA_BASE}/local-libs.zip"),
+        &format!("{RAW_BASE}/local-libs.zip.sha256"),
+        &zip_path,
+    )?;
 
     fs::create_dir_all(&local_libs_dir).map_err(|e| e.to_string())?;
 
@@ -233,29 +309,28 @@ pub fn ensure_minecraft_artifacts(client: &Client) -> Result<(), String> {
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().to_string();
+        let name = entry.name();
 
         if name.contains("..") || name.starts_with('/') {
             continue;
         }
 
-        let outpath = local_libs_dir.join(&name);
+        let output_path = local_libs_dir.join(name);
 
         if entry.is_dir() {
-            fs::create_dir_all(&outpath).map_err(|e| e.to_string())?;
+            fs::create_dir_all(&output_path).map_err(|e| e.to_string())?;
             continue;
         }
 
-        if let Some(parent) = outpath.parent() {
+        if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
 
-        let mut outfile = fs::File::create(&outpath).map_err(|e| e.to_string())?;
-        copy(&mut entry, &mut outfile).map_err(|e| e.to_string())?;
+        let mut output = fs::File::create(&output_path).map_err(|e| e.to_string())?;
+        copy(&mut entry, &mut output).map_err(|e| e.to_string())?;
     }
 
-    let _ = fs::remove_file(&zip_path);
-
+    fs::remove_file(&zip_path).map_err(|e| e.to_string())?;
     Ok(())
 }
 
