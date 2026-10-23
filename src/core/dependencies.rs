@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use super::paths::*;
 use reqwest::blocking::Client;
+
 use sha2::{Digest, Sha256};
 use std::io::copy;
 use std::io::Read;
@@ -208,35 +209,24 @@ fn is_archive_file(path: &Path) -> bool {
         .map(|x| x.eq_ignore_ascii_case("zip") || x.eq_ignore_ascii_case("jar"))
         .unwrap_or(false)
 }
-fn fetch_sha256(client: &Client, url: &str) -> Result<String, String> {
-    let response = client
-        .get(url)
-        .send()
-        .map_err(|e| format!("failed to download checksum: {e}"))?;
 
-    if !response.status().is_success() {
-        return Err(format!(
-            "checksum request returned HTTP {}",
-            response.status()
-        ));
+fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
     }
 
-    let body = response
-        .text()
-        .map_err(|e| format!("failed to read checksum: {e}"))?;
-
-    // Принимает как просто хэш, так и формат "хэш  имя-файла".
-    let hash = body
-        .split_whitespace()
-        .next()
-        .ok_or_else(|| "checksum file is empty".to_string())?
-        .to_ascii_lowercase();
-
-    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("checksum file does not contain a valid SHA-256 hash".to_string());
-    }
-
-    Ok(hash)
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn ensure_file_matches_sha256(
