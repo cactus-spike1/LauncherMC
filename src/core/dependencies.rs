@@ -6,11 +6,9 @@ use std::time::Instant;
 
 use super::paths::*;
 use reqwest::blocking::Client;
-
 use sha2::{Digest, Sha256};
 use std::io::copy;
 use std::io::Read;
-
 use zip::ZipArchive;
 
 const DEPENDENCIES: &[&str] = &[
@@ -210,10 +208,27 @@ fn is_archive_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
-    use sha2::{Digest, Sha256};
-    use std::io::Read;
+fn fetch_sha256(client: &Client, checksum_url: &str) -> Result<String, String> {
+    let response = client
+        .get(checksum_url)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .map_err(|e| format!("failed to fetch checksum: {}", e))?;
 
+    if !response.status().is_success() {
+        return Err(format!(
+            "HTTP {} while fetching checksum",
+            response.status()
+        ));
+    }
+
+    response
+        .text()
+        .map_err(|e| format!("failed to read checksum: {}", e))
+        .map(|text| text.trim().to_string())
+}
+
+fn sha256_file(path: &Path) -> std::io::Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 8192];
@@ -257,7 +272,10 @@ fn ensure_file_matches_sha256(
 
     download_file(client, file_url, destination)?;
 
-    let actual_hash = sha256_file(destination)?;
+    // ИСПРАВЛЕНИЕ: добавьте .map_err() для преобразования io::Error в String
+    let actual_hash =
+        sha256_file(destination).map_err(|e| format!("failed to calculate SHA-256: {}", e))?;
+
     if !actual_hash.eq_ignore_ascii_case(&expected_hash) {
         let _ = fs::remove_file(destination);
         return Err(format!(
