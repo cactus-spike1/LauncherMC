@@ -54,4 +54,4 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
           CREATE_RELEASE: ${{ inputs.create_release }}
         run: |
-          bash scripts/release.sh "$RELEASE_VERSION" "$CREATE_RELEASE"
+          bash builder/build.sh "$RELEASE_VERSION" "$CREATE_RELEASE"
