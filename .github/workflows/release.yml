@@ -1,4 +1,4 @@
-name: Release build (ArchLinux-only)
+name: Release build
 
 permissions:
   contents: write
@@ -9,9 +9,12 @@ on:
       version:
         description: "Version without v (e.g. 0.1.0)"
         required: true
+        type: string
       create_release:
         description: "Create release if not exists"
-        default: "true"
+        default: true
+        required: false
+        type: boolean
 
 jobs:
   build:
@@ -34,86 +37,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify release version
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          PACKAGE_VERSION="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)"
+      - name: Cache Cargo files
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-arch-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-arch-cargo-
 
-          if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "Release version $VERSION does not match Cargo.toml version $PACKAGE_VERSION"
-            exit 1
-          fi
-
-      - name: Build Linux and Windows binaries
-        run: |
-          cargo build --release --bins
-          cargo build --release --bins --target x86_64-pc-windows-gnu
-
-      - name: Prepare output files
-        run: |
-          mkdir -p out/main out/installer
-
-          copy_binary() {
-            local name=$1
-            local src_dir=$2
-            local suffix=$3
-            local source="$src_dir/$name"
-
-            if [ -f "$source" ]; then
-              cp "$source" "out/$4/${name}${suffix}"
-            elif [ -f "${source}.exe" ]; then
-              cp "${source}.exe" "out/$4/${name}${suffix}"
-            else
-              echo "Binary not found: $source"
-              exit 1
-            fi
-          }
-
-          copy_binary LauncherMC target/release -linux main
-          copy_binary LauncherMCcore target/release -linux main
-          copy_binary LauncherMC target/x86_64-pc-windows-gnu/release -windows.exe main
-          copy_binary LauncherMCcore target/x86_64-pc-windows-gnu/release -windows.exe main
-
-          copy_binary LauncherMCupdater target/release -linux installer
-          copy_binary LauncherMCupdater target/x86_64-pc-windows-gnu/release -windows.exe installer
-
-          for file in out/main/* out/installer/*; do
-            sha256sum "$file" > "$file.sha256"
-          done
-
-      - name: Create releases if needed
-        if: github.event.inputs.create_release == 'true'
+      - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          CREATE_RELEASE: ${{ inputs.create_release }}
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          MAIN_TAG="v${VERSION}"
-          INSTALLER_TAG="v${VERSION}-installer"
-
-          if ! gh release view "$MAIN_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release create "$MAIN_TAG" \
-              --title "$MAIN_TAG" \
-              --notes "LauncherMC and LauncherMCcore ${VERSION}" \
-              --repo "${{ github.repository }}"
-          fi
-
-          if ! gh release view "$INSTALLER_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release create "$INSTALLER_TAG" \
-              --title "$INSTALLER_TAG" \
-              --notes "LauncherMCupdater installer ${VERSION}" \
-              --repo "${{ github.repository }}"
-          fi
-
-      - name: Upload main components
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          gh release upload "v${VERSION}" out/main/* --clobber --repo "${{ github.repository }}"
-
-      - name: Upload installer
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          gh release upload "v${VERSION}-installer" out/installer/* --clobber --repo "${{ github.repository }}"
+          bash scripts/release.sh "$RELEASE_VERSION" "$CREATE_RELEASE"
